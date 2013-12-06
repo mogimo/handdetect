@@ -19,6 +19,7 @@ import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.objdetect.CascadeClassifier;
+import org.opencv.objdetect.Objdetect;
 
 import android.app.Activity;
 import android.content.Context;
@@ -72,10 +73,10 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private void loadHandClassifier() {
         try {
             // load cascade file from application resources
-            InputStream is = getResources().openRawResource(R.raw.hand_cascade);
+            InputStream is = getResources().openRawResource(R.raw.fist_cascade);
             File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
             File cascade = new File(
-                    cascadeDir, "hand_cascade.xml");
+                    cascadeDir, "fist_cascade.xml");
             FileOutputStream os = new FileOutputStream(cascade);
             byte[] buffer = new byte[4096];
             int n = 0;
@@ -124,7 +125,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         setContentView(R.layout.preview);
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.cameraSurfaceview);
         mOpenCvCameraView.setCvCameraViewListener(this);
-        mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
+        //mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -169,7 +170,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         int faceSize = Math.round(height * RELATIVE_FACESIZE);
         MatOfRect faces = new MatOfRect();
         if (mJavaDetector != null) {
-            mJavaDetector.detectMultiScale(mGray, faces, 1.1, 2, 2, // TODO: objdetect.CV_HAAR_SCALE_IMAGE
+            mJavaDetector.detectMultiScale(mGray, faces, 
+                    1.1, 1, Objdetect.CASCADE_SCALE_IMAGE,
                     new Size(faceSize, faceSize), new Size(height, height));
         }
         else {
