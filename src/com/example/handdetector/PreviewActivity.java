@@ -33,8 +33,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final float RELATIVE_FACESIZE = 0.2f;
     private static final Scalar FACE_RECT_COLOR = new Scalar(0, 255, 0, 255);
 
-    private CameraBridgeViewBase   mOpenCvCameraView;
-    private CascadeClassifier      mJavaDetector;
+    private CameraBridgeViewBase mOpenCvCameraView;
+    private CascadeClassifier mJavaDetector;
 
     private Mat mRgba;
     private Mat mGray;
@@ -128,7 +128,6 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         //mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
     }
 
     @Override
