@@ -23,14 +23,17 @@ import org.opencv.objdetect.Objdetect;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.WindowManager;
 
 
 public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final String TAG = "HandDetector";
-    private static final float RELATIVE_FACESIZE = 0.2f;
+    private static final float RELATIVE_FACESIZE = 0.3f;
     private static final Scalar FACE_RECT_COLOR = new Scalar(0, 255, 0, 255);
 
     private CameraBridgeViewBase mOpenCvCameraView;
@@ -39,13 +42,12 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private Mat mRgba;
     private Mat mGray;
 
-    private void loadFaceClassifier() {
+    private void loadClassifier(final int resId) {
         try {
             // load cascade file from application resources
-            InputStream is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
+            InputStream is = getResources().openRawResource(resId);
             File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
-            File cascade = new File(
-                    cascadeDir, "lbpcascade_frontalface.xml");
+            File cascade = new File(cascadeDir, "cascade.xml");
             FileOutputStream os = new FileOutputStream(cascade);
             byte[] buffer = new byte[4096];
             int n = 0;
@@ -61,45 +63,26 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 mJavaDetector = null;
             } else {
                 Log.i(TAG, "Loaded cascade classifier from "
-                        + cascade.getAbsolutePath());
+                        + getResources().getResourceName(resId));
             }
             cascadeDir.delete();
+            cascade.delete();
         } catch (IOException e) {
             e.printStackTrace();
             Log.e(TAG, "Failed to load cascade: " + e);
         }
     }
 
-    private void loadHandClassifier() {
-        try {
-            // load cascade file from application resources
-            InputStream is = getResources().openRawResource(R.raw.fist_cascade);
-            File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
-            File cascade = new File(
-                    cascadeDir, "fist_cascade.xml");
-            FileOutputStream os = new FileOutputStream(cascade);
-            byte[] buffer = new byte[4096];
-            int n = 0;
-            while ((n = is.read(buffer)) != -1) {
-                os.write(buffer, 0, n);
-            }
-            is.close();
-            os.close();
+    private void loadFaceClassifier() {
+        loadClassifier(R.raw.lbpcascade_frontalface);
+    }
 
-            mJavaDetector = new CascadeClassifier();
-            mJavaDetector.load(cascade.getAbsolutePath());
-            if (mJavaDetector.empty()) {
-                Log.e(TAG, "Failed to load cascade classifier");
-                mJavaDetector = null;
-            } else {
-                Log.i(TAG, "Loaded cascade classifier from "
-                        + cascade.getAbsolutePath());
-            }
-            cascadeDir.delete();
-        } catch (IOException e) {
-            e.printStackTrace();
-            Log.e(TAG, "Failed to load cascade: " + e);
-        }
+    private void loadHandClassifier() {
+        loadClassifier(R.raw.hand_cascade);
+    }
+
+    private void loadFistClassifier() {
+        loadClassifier(R.raw.fist_cascade);
     }
 
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
@@ -109,7 +92,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 case LoaderCallbackInterface.SUCCESS:
                     Log.i(TAG, "OpenCV loaded successfully");
                     //loadFaceClassifier();
-                    loadHandClassifier();
+                    //loadHandClassifier();
+                    loadFistClassifier();
                     mOpenCvCameraView.enableView();
                     break;
                 default:
@@ -125,7 +109,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         setContentView(R.layout.preview);
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.cameraSurfaceview);
         mOpenCvCameraView.setCvCameraViewListener(this);
-        //mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
+        mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
@@ -165,23 +149,57 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
 
-        int height = mGray.rows();
-        int faceSize = Math.round(height * RELATIVE_FACESIZE);
         MatOfRect faces = new MatOfRect();
         if (mJavaDetector != null) {
+            int height = mGray.rows();
+            int faceSize = Math.round(height * RELATIVE_FACESIZE);
             mJavaDetector.detectMultiScale(mGray, faces, 
                     1.1, 1, Objdetect.CASCADE_SCALE_IMAGE,
                     new Size(faceSize, faceSize), new Size(height, height));
+            //mJavaDetector.detectMultiScale(mGray, faces);
+            Rect[] facesArray = faces.toArray();
+            for (int i = 0; i < facesArray.length; i++) {
+                Core.rectangle(mRgba, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
+            }
         }
         else {
             Log.e(TAG, "Detection method is not selected!");
         }
-
-        Rect[] facesArray = faces.toArray();
-        for (int i = 0; i < facesArray.length; i++) {
-            Core.rectangle(mRgba, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
-        }
         return mRgba;
     }
+
+    /*
+     * Menu
+     */
+    public boolean onCreateOptionsMenu(Menu menu) {
+        menu.add(0,0,0,"Detect Fist");
+        menu.add(0,1,0,"Detect Hand");
+        menu.add(0,2,0,"Detect Face");
+        menu.add(0,3,0,"Detect for Snap");
+        return true;
+    }
+
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case 0:
+                mJavaDetector = null;
+                loadFistClassifier();
+                break;
+            case 1:
+                mJavaDetector = null;
+                loadHandClassifier();
+                break;
+            case 2:
+                mJavaDetector = null;
+                loadFaceClassifier();
+                break;
+            case 3:
+            default:
+                Intent intent = new Intent(this, SnapShotActivity.class);
+                startActivity(intent);
+                break;
+        }
+        return true;
+    }    
 
 }
