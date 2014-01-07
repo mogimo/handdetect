@@ -15,6 +15,7 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfRect;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -34,7 +35,9 @@ import android.view.WindowManager;
 public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final String TAG = "HandDetector";
     private static final float RELATIVE_FACESIZE = 0.3f;
-    private static final Scalar FACE_RECT_COLOR = new Scalar(0, 255, 0, 255);
+    private static final Scalar DETECT_RECT_COLOR = new Scalar(0, 255, 0, 255);
+    private static final Scalar LINE_COLOR = new Scalar(255, 0, 0, 255);
+    private static final int AREA_NUM = 3;
 
     private CameraBridgeViewBase mOpenCvCameraView;
     private CascadeClassifier mJavaDetector;
@@ -149,9 +152,18 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
 
+        // draw line
+        int height = mGray.rows();
+        int width = mGray.cols();
+        for (int i=1; i<AREA_NUM; i++) {
+            double x = width/AREA_NUM * i;
+            Core.line(mRgba,
+                    new Point(x, 0), new Point(x, height), LINE_COLOR, 3);
+        }
+
+        // draw rectangle
         MatOfRect faces = new MatOfRect();
         if (mJavaDetector != null) {
-            int height = mGray.rows();
             int faceSize = Math.round(height * RELATIVE_FACESIZE);
             mJavaDetector.detectMultiScale(mGray, faces, 
                     1.1, 1, Objdetect.CASCADE_SCALE_IMAGE,
@@ -159,7 +171,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             //mJavaDetector.detectMultiScale(mGray, faces);
             Rect[] facesArray = faces.toArray();
             for (int i = 0; i < facesArray.length; i++) {
-                Core.rectangle(mRgba, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
+                Core.rectangle(mRgba,
+                        facesArray[i].tl(), facesArray[i].br(),
+                        DETECT_RECT_COLOR, 3);
             }
         }
         else {
