@@ -5,6 +5,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
@@ -14,11 +16,13 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfRect;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.objdetect.Objdetect;
 
@@ -44,6 +48,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     private Mat mRgba;
     private Mat mGray;
+    private Mat mTemp;
+    private Mat mHsv;
+    private Mat m32f;
 
     private void loadClassifier(final int resId) {
         try {
@@ -113,6 +120,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.cameraSurfaceview);
         mOpenCvCameraView.setCvCameraViewListener(this);
         mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
+        mOpenCvCameraView.enableFpsMeter();
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
@@ -139,6 +147,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     public void onCameraViewStarted(int width, int height) {
         mGray = new Mat();
         mRgba = new Mat();
+        mTemp = new Mat();
+        mHsv = new Mat();
+        m32f = new Mat();
     }
 
     @Override
@@ -150,35 +161,50 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     @Override
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
-        mGray = inputFrame.gray();
 
-        // draw line
-        int height = mGray.rows();
-        int width = mGray.cols();
-        for (int i=1; i<AREA_NUM; i++) {
-            double x = width/AREA_NUM * i;
-            Core.line(mRgba,
-                    new Point(x, 0), new Point(x, height), LINE_COLOR, 3);
-        }
-
-        // draw rectangle
-        MatOfRect faces = new MatOfRect();
-        if (mJavaDetector != null) {
-            int faceSize = Math.round(height * RELATIVE_FACESIZE);
-            mJavaDetector.detectMultiScale(mGray, faces, 
-                    1.1, 1, Objdetect.CASCADE_SCALE_IMAGE,
-                    new Size(faceSize, faceSize), new Size(height, height));
-            //mJavaDetector.detectMultiScale(mGray, faces);
-            Rect[] facesArray = faces.toArray();
-            for (int i = 0; i < facesArray.length; i++) {
-                Core.rectangle(mRgba,
-                        facesArray[i].tl(), facesArray[i].br(),
-                        DETECT_RECT_COLOR, 3);
+        Core.flip(mRgba, mRgba, 1);
+        // (1) convert to HSV
+        Imgproc.cvtColor(mRgba, mTemp, Imgproc.COLOR_RGBA2RGB);
+        Imgproc.cvtColor(mTemp, mHsv, Imgproc.COLOR_RGB2HSV);
+        // (2) smooth with median
+        Imgproc.GaussianBlur(mHsv, mTemp, new Size(15,15), 8);
+        // (3) skin color detection
+        Core.inRange(mTemp, new Scalar(0, 38, 89), new Scalar(25, 192, 243), mHsv);
+        // (4) distance transform
+        Imgproc.distanceTransform(mHsv, m32f, Imgproc.CV_DIST_L2, 5);
+        Core.convertScaleAbs(m32f, mGray);
+        // (5) retrieve contours 
+        List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(mGray, contours, hierarchy,
+                1 /*CV_RETR_LIST*/,
+                1 /*CV_CHAIN_APPROX_NONE*/);
+        int index = 0, maxId = -1;
+        double area = 0.0f, maxArea = 0.0f;
+        MatOfPoint maxContours = null;
+        for (MatOfPoint cont : contours) {
+            area = Imgproc.contourArea(cont);
+            if (Double.compare(maxArea, area) < 0) {
+                maxArea = area;
+                maxId = index;
+                maxContours = cont;
             }
+            index++;
         }
-        else {
-            Log.e(TAG, "Detection method is not selected!");
+        // (6) show detect area as a "hand"
+        if (maxContours != null) {
+            Point[] points = maxContours.toArray();
+            double sumx = 0.0f, sumy = 0.0f;
+            int num = points.length;
+            for (int i=0; i<num; i++) {
+                sumx += points[i].x;
+                sumy += points[i].y;
+            }
+            Core.circle(mRgba,
+                    new Point(sumx/num, sumy/num),
+                    10, new Scalar(0,0,255), 5);
         }
+        Imgproc.drawContours(mRgba, contours, maxId, new Scalar(255,0,0), 3);
         return mRgba;
     }
 
