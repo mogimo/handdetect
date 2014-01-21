@@ -11,10 +11,12 @@ import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfInt;
 import org.opencv.core.MatOfInt4;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -69,7 +71,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mOpenCvCameraView.setCvCameraViewListener(this);
         mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
         mOpenCvCameraView.enableFpsMeter();
-        //mOpenCvCameraView.setMaxFrameSize(640, 480);
+        mOpenCvCameraView.setMaxFrameSize(640, 480);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
@@ -112,6 +114,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mBin.release();
     }
 
+
+    private static boolean isPortrait = false;
     //private static final Scalar LOWER_RANGE = new Scalar(0, 38, 89);
     //private static final Scalar UPPER_RANGE = new Scalar(25, 192, 243);
     private static final Scalar LOWER_RANGE = new Scalar(0, 59, 79);
@@ -120,12 +124,16 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final int MEDIAN_BLUR_THRESH = 11;
     private static final int FINGER_EDGE_THRESH = 6;
 
-    @Override
-    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
-        mRgba = inputFrame.rgba();
-        int height = mRgba.rows();
-        int width = mRgba.cols();
+    private void rotate90() {
+        MatOfPoint2f src = new MatOfPoint2f(
+                new Point(100, 200), new Point(300, 200), new Point(300, 100));
+        MatOfPoint2f dst = new MatOfPoint2f(
+                new Point(100, 200), new Point(100, 400), new Point(200, 400));
+        Mat rot = Imgproc.getAffineTransform(src, dst);
+        Imgproc.warpAffine(mRgba, mRgba, rot, mRgba.size());
+    }
 
+    private void judgeArea(final int width, final int height, Point center) {
         // draw area lines
         double left = width/5;
         double right = width/5 * 4;
@@ -135,17 +143,33 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         Core.line(mRgba,
                 new Point(right, 0), new Point(right, height),
                 AREA_COLOR, 2);
+        if (Double.compare(center.x, left) < 0) {
+            Log.e(TAG, "left");
+        } else if (Double.compare(center.x, right) > 0) {
+            Log.e(TAG, "right");
+        }
+    }
 
-        // (0) invert left to right
+    @Override
+    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
+        mRgba = inputFrame.rgba();
+        int height = mRgba.rows();
+        int width = mRgba.cols();
+
+        // (0) flip around y-axis
         Core.flip(mRgba, mRgba, 1);
+        if (isPortrait) {
+            rotate90();
+        }
+
         // (1) convert to HSV
         Imgproc.cvtColor(mRgba, mTemp, Imgproc.COLOR_RGBA2RGB);
         Imgproc.cvtColor(mTemp, mHsv, Imgproc.COLOR_RGB2HSV);
         // (2) smooth with median
-        Imgproc.medianBlur(mHsv, mTemp, MEDIAN_BLUR_THRESH);
+        //Imgproc.medianBlur(mHsv, mTemp, MEDIAN_BLUR_THRESH);
         //Imgproc.GaussianBlur(mHsv, mTemp, new Size(15,15), 8);
         // (3) skin color detection
-        Core.inRange(mTemp, LOWER_RANGE, UPPER_RANGE, mBin);
+        Core.inRange(mHsv, LOWER_RANGE, UPPER_RANGE, mBin);
         // (4) distance transform
         Imgproc.distanceTransform(mBin, m32f, Imgproc.CV_DIST_L2, 5);
         Core.convertScaleAbs(m32f, mGray);
@@ -171,47 +195,46 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         Imgproc.drawContours(mRgba, contours, maxId, AREA_COLOR, 3);
         // (7) find convex hull
         int edgeCount = 0;
-        if (maxContours != null) {
-//            if (Imgproc.isContourConvex(maxContours)) {
-                MatOfInt hull = new MatOfInt();
-                MatOfInt4 detectedHull = new MatOfInt4();
-                Imgproc.convexHull(maxContours, hull);
-                Imgproc.convexityDefects(maxContours, hull, detectedHull);
-                int[] hulls = detectedHull.toArray();
-                double x, y;
-                float angle, angle1, angle2, pre_angle2 = 0.0f, pre_angle;
-                for (int i=0; i<hulls.length; i+=4) {
-                    if (hulls[i+3] > 5000) {
-                        Point[] points = maxContours.toArray();
-                        Core.line(mRgba,
-                                points[hulls[i]], points[hulls[i+2]],
-                                LINE_COLOR, 3);
-                        x = points[hulls[i]].x - points[hulls[i+2]].x;
-                        y = points[hulls[i]].y - points[hulls[i+2]].y;
-                        angle1 = Core.fastAtan2((float)y, (float)x);
-                        Core.line(mRgba,
-                                points[hulls[i+1]], points[hulls[i+2]],
-                                LINE_COLOR, 3);
-                        x = points[hulls[i+1]].x - points[hulls[i+2]].x;
-                        y = points[hulls[i+1]].y - points[hulls[i+2]].y;
-                        angle2 = Core.fastAtan2((float)y, (float)x);
-                        angle = Float.compare(angle1, angle2) > 0 ?
-                                (angle1 - angle2) : (angle2 - angle1);
-                        Log.d(TAG, "angle=" + angle);
-                        if (Float.compare(angle, EDGE_ANGLE) < 0) {
+        if ((maxContours != null) &&
+                (maxContours.checkVector(2, CvType.CV_32S) > 3)) {
+            MatOfInt hull = new MatOfInt();
+            MatOfInt4 detectedHull = new MatOfInt4();
+            Imgproc.convexHull(maxContours, hull);
+            Imgproc.convexityDefects(maxContours, hull, detectedHull);
+            int[] hulls = detectedHull.toArray();
+            double x, y;
+            float angle, angle1, angle2, pre_angle2 = 0.0f, pre_angle;
+            for (int i=0; i<hulls.length; i+=4) {
+                if (hulls[i+3] > 5000) {
+                    Point[] points = maxContours.toArray();
+                    Core.line(mRgba,
+                            points[hulls[i]], points[hulls[i+2]],
+                            LINE_COLOR, 3);
+                    x = points[hulls[i]].x - points[hulls[i+2]].x;
+                    y = points[hulls[i]].y - points[hulls[i+2]].y;
+                    angle1 = Core.fastAtan2((float)y, (float)x);
+                    Core.line(mRgba,
+                            points[hulls[i+1]], points[hulls[i+2]],
+                            LINE_COLOR, 3);
+                    x = points[hulls[i+1]].x - points[hulls[i+2]].x;
+                    y = points[hulls[i+1]].y - points[hulls[i+2]].y;
+                    angle2 = Core.fastAtan2((float)y, (float)x);
+                    angle = Float.compare(angle1, angle2) > 0 ?
+                            (angle1 - angle2) : (angle2 - angle1);
+                    Log.d(TAG, "angle=" + angle);
+                    if (Float.compare(angle, EDGE_ANGLE) < 0) {
+                            edgeCount++;
+                    }
+                    if (i != 0) {
+                        pre_angle = Float.compare(pre_angle2, angle1) > 0 ?
+                                (pre_angle2 - angle1) : (angle1 - pre_angle2);
+                        if (Float.compare(pre_angle, EDGE_ANGLE) < 0) {
                             edgeCount++;
                         }
-                        if (i != 0) {
-                            pre_angle = Float.compare(pre_angle2, angle1) > 0 ?
-                                    (pre_angle2 - angle1) : (angle1 - pre_angle2);
-                            if (Float.compare(pre_angle, EDGE_ANGLE) < 0) {
-                                edgeCount++;
-                            }
-                        }
-                        pre_angle2 = angle2;
                     }
+                    pre_angle2 = angle2;
                 }
-//            }
+            }
         }
         // (8) show detected object as a hand
         Log.d(TAG, "edge=" + edgeCount);
@@ -223,17 +246,10 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 sumx += points[i].x;
                 sumy += points[i].y;
             }
-            double targetX = sumx/num;
-            Core.circle(mRgba,
-                    new Point(targetX, sumy/num),
-                    20, DETECT_COLOR, 5);
+            Point center = new Point(sumx/num, sumy/num);
+            Core.circle(mRgba, center, 20, DETECT_COLOR, 5);
             // (9) judge area (right or left)
-            if (Double.compare(targetX, left) < 0) {
-                Log.e(TAG, "left");
-            } else if (Double.compare(targetX, right) > 0) {
-                Log.e(TAG, "right");
-            }
-
+            judgeArea(width, height, center);
         }
 
         // switch preview mode
