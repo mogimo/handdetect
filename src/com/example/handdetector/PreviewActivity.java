@@ -37,7 +37,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final Scalar LINE_COLOR = new Scalar(0, 255, 0, 255);
     private static final Scalar AREA_COLOR = new Scalar(255, 0, 0, 255);
 
-    private CameraBridgeViewBase mOpenCvCameraView;
+    private ControlableCameraView mOpenCvCameraView;
 
     private Mat mRgba;
     private Mat mGray;
@@ -50,9 +50,12 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private ViewType mode = ViewType.RGB;
 
     private int mWidth, mHeight;
-    private int mLeftRatio = 2, mRightRatio = 2, mMiddleRatio = 3,
-            mFrontRatio = 2, mRearRatio = 1;
+    private int mLeftRatio = 2, mRightRatio = 2, mMiddleRatio = 3;
+    private int mFrontRatio = 2, mRearRatio = 1;
     private double mLeftBorder, mRightBorder, mFrontBorder;
+    private int mExposure = 0;
+
+    private MotionControl mMotionControl;
 
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -73,12 +76,13 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.preview);
-        mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.cameraSurfaceview);
+        mOpenCvCameraView = (ControlableCameraView) findViewById(R.id.cameraSurfaceview);
         mOpenCvCameraView.setCvCameraViewListener(this);
         mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
         mOpenCvCameraView.enableFpsMeter();
         mOpenCvCameraView.setMaxFrameSize(800, 480);
 
+        mMotionControl = new MotionControl();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
@@ -112,6 +116,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mHsv = new Mat();
         m32f = new Mat();
         mBin = new Mat();
+
+        Log.d(TAG, "set exposure = " + mExposure);
+        mOpenCvCameraView.setExposure(mExposure);
     }
 
     @Override
@@ -168,21 +175,31 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         Core.line(mRgba,
                 new Point(mLeftBorder, mFrontBorder), new Point(mRightBorder, mFrontBorder),
                 AREA_COLOR, 2);
+        // バックできないらしいので後ろの部分を左右に分割
+        Core.line(mRgba,
+                new Point(mWidth/2, mFrontBorder), new Point(mWidth/2, mHeight),
+                AREA_COLOR, 2);
     }
 
     private void judgeArea(Point target) {
         if (Double.compare(target.x, mLeftBorder) < 0) {
             // turn left!
-            MotionControl.moveLeft();
+            mMotionControl.moveLeft();
         } else if (Double.compare(target.x, mRightBorder) > 0) {
             // turn right!
-            MotionControl.moveRight();
-        } else if (Double.compare(target.y, mFrontBorder) > 0) {
+            mMotionControl.moveRight();
+        } else if (Double.compare(target.y, mFrontBorder) < 0) {
             // move forward!
-            MotionControl.moveForward();
+            mMotionControl.moveForward();
         } else {
             // move back!
-            MotionControl.moveBack();
+            //mMotionControl.moveBack();
+            // バックはできないらしいので中央から左右に回転
+            if (Double.compare(target.x, mWidth/2) > 0) {
+                mMotionControl.moveRight();
+            } else {
+                mMotionControl.moveLeft();
+            }
         }
     }
 
@@ -308,7 +325,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             judgeArea(center);
         } else {
             // stop
-            MotionControl.moveStop();
+            mMotionControl.moveStop();
         }
 
         // switch preview mode
@@ -335,7 +352,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             mMiddleRatio = data.getIntExtra("middle", 2);
             mFrontRatio = data.getIntExtra("front", 2);
             mRearRatio = data.getIntExtra("rear", 1);
-    
+            mExposure = data.getIntExtra("exposure", 0);
+
             updateBorder();
         }
     }
@@ -349,7 +367,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         menu.add(0,2,0,"Toggle Debug");
         menu.add(0,3,0,"Binary");
         menu.add(0,4,0,"Distance");
-        menu.add(0,5,0,"Area Edit");
+        menu.add(0,5,0,"Setting");
         return true;
     }
 
@@ -371,7 +389,15 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 mode = ViewType.DIST;
                 break;
             case 5:
-                Intent intent = new Intent(this, AreaRatioEditActivity.class);
+                Intent intent = new Intent(this, SettingActivity.class);
+                intent.putExtra("left", mLeftRatio);
+                intent.putExtra("right", mRightRatio);
+                intent.putExtra("middle", mMiddleRatio);
+                intent.putExtra("front", mFrontRatio);
+                intent.putExtra("rear", mRearRatio);
+                intent.putExtra("max", mOpenCvCameraView.getMaxExposure());
+                intent.putExtra("min", mOpenCvCameraView.getMinExposure());
+                intent.putExtra("exposure", mExposure);
                 startActivityForResult(intent, 0);
             default:
                 break;
