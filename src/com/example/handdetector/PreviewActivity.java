@@ -239,19 +239,22 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             Imgproc.drawContours(mRgba, contours, maxId, AREA_COLOR, 3);
         }
         // (7) find convex hull
-        int edgeCount = 0;
+        int edgeCount = 0, fingerCount = 0;
         if ((maxContours != null) &&
                 (maxContours.checkVector(2, CvType.CV_32S) > 3)) {
             MatOfInt hull = new MatOfInt();
             MatOfInt4 detectedHull = new MatOfInt4();
             Imgproc.convexHull(maxContours, hull);
             Imgproc.convexityDefects(maxContours, hull, detectedHull);
-            int[] hulls = detectedHull.toArray();
             double x, y;
             float angle, angle1, angle2, pre_angle2 = 0.0f, pre_angle;
+            int[] hulls = detectedHull.toArray();  //TODO: Use Matrix!
+            // hull = {start_point, end_point, depth_point, depth}
             for (int i=0; i<hulls.length; i+=4) {
+                // choose only deeper depth
                 if (hulls[i+3] > 5000) {
-                    Point[] points = maxContours.toArray();
+                    Point[] points = maxContours.toArray(); //TODO: Use Matrix!
+                    // vector1: start_point ---> depth_point
                     if (isDebugDraw) {
                         Core.line(mRgba,
                             points[hulls[i]], points[hulls[i+2]],
@@ -260,6 +263,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                     x = points[hulls[i]].x - points[hulls[i+2]].x;
                     y = points[hulls[i]].y - points[hulls[i+2]].y;
                     angle1 = Core.fastAtan2((float)y, (float)x);
+                    // vector2: end_point ---> depth_point
                     if (isDebugDraw) {
                         Core.line(mRgba,
                             points[hulls[i+1]], points[hulls[i+2]],
@@ -268,13 +272,16 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                     x = points[hulls[i+1]].x - points[hulls[i+2]].x;
                     y = points[hulls[i+1]].y - points[hulls[i+2]].y;
                     angle2 = Core.fastAtan2((float)y, (float)x);
+                    // angle between Vector1 and Vector2
                     angle = Float.compare(angle1, angle2) > 0 ?
                             (angle1 - angle2) : (angle2 - angle1);
-                    Log.d(TAG, "angle=" + angle);
+                    //Log.d(TAG, "angle=" + angle);
                     if (Float.compare(angle, EDGE_ANGLE) < 0) {
                             edgeCount++;
+                            fingerCount++;
                     }
                     if (i != 0) {
+                        // angle between previous vector2 and current vector1
                         pre_angle = Float.compare(pre_angle2, angle1) > 0 ?
                                 (pre_angle2 - angle1) : (angle1 - pre_angle2);
                         if (Float.compare(pre_angle, EDGE_ANGLE) < 0) {
@@ -286,7 +293,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             }
         }
         // (8) show detected object as a hand
-        Log.d(TAG, "edge=" + edgeCount);
+        //Log.d(TAG, "edge=" + edgeCount + " (finger=" + fingerCount + ")");
         if (maxContours != null && (edgeCount >= FINGER_EDGE_THRESH)) {
             Point[] points = maxContours.toArray();
             double sumx = 0.0f, sumy = 0.0f;
