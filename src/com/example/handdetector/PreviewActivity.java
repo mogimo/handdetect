@@ -36,6 +36,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final Scalar DETECT_COLOR = new Scalar(0, 0, 255, 255);
     private static final Scalar LINE_COLOR = new Scalar(0, 255, 0, 255);
     private static final Scalar AREA_COLOR = new Scalar(255, 0, 0, 255);
+    private static final Scalar FONT_COLOR = new Scalar(0, 128, 128);
+
+    private Point TEXT_POINT;
 
     private ControlableCameraView mOpenCvCameraView;
 
@@ -117,6 +120,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         m32f = new Mat();
         mBin = new Mat();
 
+        TEXT_POINT = new Point(0, mHeight-10);
         Log.d(TAG, "set exposure = " + mExposure);
         mOpenCvCameraView.setExposure(mExposure);
     }
@@ -134,13 +138,13 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     private static boolean isPortrait = false; // この試みは失敗に終わったので永久にfalse
     private static boolean isDebugDraw = false; // 輪郭線とか凹凸の線とかを画面表示
-    //private static final Scalar LOWER_RANGE = new Scalar(0, 38, 89);
-    //private static final Scalar UPPER_RANGE = new Scalar(25, 192, 243);
-    private static final Scalar LOWER_RANGE = new Scalar(0, 38, 50);
+    //private static final Scalar LOWER_RANGE = new Scalar(0, 38, 50);
+    private static final Scalar LOWER_RANGE = new Scalar(0, 23, 25);
     private static final Scalar UPPER_RANGE = new Scalar(24, 190, 228);
     private static final float EDGE_ANGLE = 60.0f;
     private static final int MEDIAN_BLUR_THRESH = 11;
-    private static final int FINGER_EDGE_THRESH = 6;
+    //private static final int FINGER_EDGE_THRESH = 6;
+    private static final int FINGER_EDGE_THRESH = 3;
 
     private void rotate90() {
         MatOfPoint2f src = new MatOfPoint2f(
@@ -254,6 +258,11 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         drawAreaLine();
         if (isDebugDraw) {
             Imgproc.drawContours(mRgba, contours, maxId, AREA_COLOR, 3);
+        }
+        // draw text "exposure locked"
+        if (mOpenCvCameraView.isExposureLocked()) {
+            Core.putText(mRgba, "Auto Exposure Locked",
+                    TEXT_POINT, Core.FONT_HERSHEY_DUPLEX, 1.0f, FONT_COLOR);
         }
         // (7) find convex hull
         int edgeCount = 0, fingerCount = 0;
@@ -398,6 +407,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 intent.putExtra("max", mOpenCvCameraView.getMaxExposure());
                 intent.putExtra("min", mOpenCvCameraView.getMinExposure());
                 intent.putExtra("exposure", mExposure);
+                intent.putExtra("exlock", mOpenCvCameraView.getAutoExposuerLockState());
                 startActivityForResult(intent, 0);
             default:
                 break;

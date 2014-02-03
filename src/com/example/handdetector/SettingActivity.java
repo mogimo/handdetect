@@ -17,6 +17,7 @@ public class SettingActivity extends Activity
     private Button mButton;
     private int mMax = 0, mMin = 0, mExposure = 0;
     private SeekBar mSeekbar;
+    private boolean isExposureLocked = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,10 +40,11 @@ public class SettingActivity extends Activity
             mMax = intent.getIntExtra("max", 0);
             mMin = intent.getIntExtra("min", 0);
             mExposure = intent.getIntExtra("exposure", 0);
+            isExposureLocked = intent.getBooleanExtra("exlock", false);
         }
 
         mSeekbar = (SeekBar)findViewById(R.id.seekbar);
-        if (mMax == 0 && mMin == 0) {
+        if ((mMax == 0 && mMin == 0) || isExposureLocked) {
             mSeekbar.setVisibility(View.INVISIBLE);
         } else {
             mSeekbar.setOnSeekBarChangeListener(this);
