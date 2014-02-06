@@ -15,6 +15,7 @@ import android.widget.Toast;
 public class ControlableCameraView extends JavaCameraView {
     private static final String TAG = "HandDetector";
 
+    private Context mContext;
     private TouchGestureListener mListener = new TouchGestureListener();
     private GestureDetector mTouchDetector;
 
@@ -36,11 +37,17 @@ public class ControlableCameraView extends JavaCameraView {
             }
             return super.onDoubleTap(e);
         }
+        @Override
+        public void onLongPress(MotionEvent e) {
+            ((PreviewActivity)mContext).togglePreviewMode();
+            super.onLongPress(e);
+        }
     }
 
     public ControlableCameraView(Context context, AttributeSet attrs) {
         super(context, attrs);
 
+        mContext = context;
         mTouchDetector = new GestureDetector(getContext(), mListener);
     }
 

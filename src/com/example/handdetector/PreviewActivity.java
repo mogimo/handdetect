@@ -13,11 +13,13 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfFloat;
 import org.opencv.core.MatOfInt;
 import org.opencv.core.MatOfInt4;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
@@ -25,9 +27,13 @@ import org.opencv.imgproc.Imgproc;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
+import android.view.GestureDetector;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.WindowManager;
 
 
@@ -48,6 +54,11 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private Mat mHsv;
     private Mat m32f;
     private Mat mBin;
+    private Mat mRoi;
+    private Mat mHist;
+    MatOfInt mChannels;
+    MatOfInt mHistSize;
+    MatOfFloat mRange;
 
     private enum ViewType {RGB, HSV, BLUR, BIN, DIST};
     private ViewType mode = ViewType.RGB;
@@ -74,6 +85,41 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             }
         }
     };
+
+    private static final int MSG_CALC_HIST = 1;
+    private MessageHandler mHandler = new MessageHandler();
+    private class MessageHandler extends Handler {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case MSG_CALC_HIST:
+                    Log.d(TAG, "timer expired!");
+                    hasHistgram = true;
+                    togglePreviewMode();
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    private enum PreviewMode {DETECT, ADJUST};
+    private PreviewMode mPreviewMode = PreviewMode.DETECT;
+    private boolean hasHistgram = false;
+
+    public void togglePreviewMode() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("preview mode changed: " + mPreviewMode);
+        mHandler.removeMessages(MSG_CALC_HIST);
+        if (mPreviewMode == PreviewMode.DETECT) {
+            hasHistgram = false;
+            mPreviewMode = PreviewMode.ADJUST;
+        } else {
+            mPreviewMode = PreviewMode.DETECT;
+        }
+        builder.append(" --> " + mPreviewMode);
+        Log.d(TAG, builder.toString());
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -119,10 +165,17 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mHsv = new Mat();
         m32f = new Mat();
         mBin = new Mat();
+        mRoi = new Mat();
+        mHist = new Mat();
+        mChannels = new MatOfInt(0, 1);
+        mHistSize = new MatOfInt(30, 32);
+        mRange = new MatOfFloat(0, 180, 0, 256);
 
         TEXT_POINT = new Point(0, mHeight-10);
         Log.d(TAG, "set exposure = " + mExposure);
         mOpenCvCameraView.setExposure(mExposure);
+
+        updateTargetPoint();
     }
 
     @Override
@@ -133,6 +186,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mHsv.release();
         m32f.release();
         mBin.release();
+        mRoi.release();
+        mHist.release();
     }
 
 
@@ -146,6 +201,20 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     //private static final int FINGER_EDGE_THRESH = 6;
     private static final int FINGER_EDGE_THRESH = 3;
 
+    private Point mAreaPoint1 = new Point();
+    private Point mAreaPoint2 = new Point();
+    private Point mAreaPoint3 = new Point();
+    private Point mAreaPoint4 = new Point();
+    private Point mAreaPoint5 = new Point();
+    private Point mAreaPoint6 = new Point();
+    private Point mAreaPoint7 = new Point();
+    private Point mAreaPoint8 = new Point();
+
+    private Point mTargetPoint1 = new Point();
+    private Point mTargetPoint2 = new Point();
+    private Point mTargetPoint3 = new Point();
+    private Point mTargetPoint4 = new Point();
+
     private void rotate90() {
         MatOfPoint2f src = new MatOfPoint2f(
                 new Point(100, 200), new Point(300, 200), new Point(300, 100));
@@ -153,6 +222,13 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 new Point(100, 200), new Point(100, 400), new Point(200, 400));
         Mat rot = Imgproc.getAffineTransform(src, dst);
         Imgproc.warpAffine(mRgba, mRgba, rot, mRgba.size());
+    }
+
+    private void updateTargetPoint() {
+        mTargetPoint1.x = mTargetPoint3.x = mWidth*2/5;
+        mTargetPoint2.x = mTargetPoint4.x = mWidth*3/5;
+        mTargetPoint1.y = mTargetPoint2.y = mHeight*2/5;
+        mTargetPoint3.y = mTargetPoint4.y = mHeight*3/5;
     }
 
     private boolean isValid() {
@@ -167,22 +243,27 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             mRightBorder = mWidth/sumx * (mLeftRatio + mMiddleRatio);
             mFrontBorder = mHeight/(mFrontRatio + mRearRatio) * mFrontRatio;
         }
+        mAreaPoint1.x = mAreaPoint2.x = mAreaPoint5.x = mLeftBorder;
+        mAreaPoint1.y = mAreaPoint3.y = 0;
+        mAreaPoint2.y = mAreaPoint4.y = mAreaPoint8.y = mHeight;
+        mAreaPoint3.x = mAreaPoint4.x = mAreaPoint6.x = mRightBorder;
+        mAreaPoint5.y = mAreaPoint6.y = mAreaPoint7.y = mFrontBorder;
+        mAreaPoint7.x = mAreaPoint8.x = mWidth/2;
     }
 
     private void drawAreaLine() {
-        Core.line(mRgba,
-                new Point(mLeftBorder, 0), new Point(mLeftBorder, mHeight),
-                AREA_COLOR, 2);
-        Core.line(mRgba,
-                new Point(mRightBorder, 0), new Point(mRightBorder, mHeight),
-                AREA_COLOR, 2);
-        Core.line(mRgba,
-                new Point(mLeftBorder, mFrontBorder), new Point(mRightBorder, mFrontBorder),
-                AREA_COLOR, 2);
-        // バックできないらしいので後ろの部分を左右に分割
-        Core.line(mRgba,
-                new Point(mWidth/2, mFrontBorder), new Point(mWidth/2, mHeight),
-                AREA_COLOR, 2);
+        if (mPreviewMode == PreviewMode.DETECT) {
+            Core.line(mRgba, mAreaPoint1, mAreaPoint2, AREA_COLOR, 2);
+            Core.line(mRgba, mAreaPoint3, mAreaPoint4, AREA_COLOR, 2);
+            Core.line(mRgba, mAreaPoint5, mAreaPoint6, AREA_COLOR, 2);
+            // バックできないらしいので後ろの部分を左右に分割
+            Core.line(mRgba, mAreaPoint7, mAreaPoint8, AREA_COLOR, 2);
+        } else {
+            Core.line(mRgba, mTargetPoint1, mTargetPoint2, AREA_COLOR, 2);
+            Core.line(mRgba, mTargetPoint1, mTargetPoint3, AREA_COLOR, 2);
+            Core.line(mRgba, mTargetPoint2, mTargetPoint4, AREA_COLOR, 2);
+            Core.line(mRgba, mTargetPoint3, mTargetPoint4, AREA_COLOR, 2);
+        }
     }
 
     private void judgeArea(Point target) {
@@ -207,6 +288,26 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         }
     }
 
+    private void calcHistgram() {
+        if (!mHandler.hasMessages(MSG_CALC_HIST)) {
+            Log.d(TAG, "start timeer 5sec");
+            mHandler.sendEmptyMessageDelayed(MSG_CALC_HIST, 5000);
+        }
+        mHsv.submat(new Rect(mTargetPoint1, mTargetPoint4)).copyTo(mRoi);
+
+        Mat mask = new Mat();
+        List<Mat> list = new ArrayList<Mat>();
+        Core.split(mRoi, list);
+        Imgproc.calcHist(list, mChannels, mask, mHist, mHistSize, mRange);
+    }
+
+    private void backProjection() {
+        List<Mat> list = new ArrayList<Mat>();
+        Core.split(mHsv, list);
+        Imgproc.calcBackProject(list, mChannels, mHist, mTemp, mRange, 1.0f);
+        Core.inRange(mTemp, new Scalar(180), new Scalar(255), mBin);
+    }
+
     @Override
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
@@ -227,7 +328,16 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         //Imgproc.GaussianBlur(mHsv, mTemp, new Size(15,15), 8);
 
         // (3) skin color detection
-        Core.inRange(mHsv, LOWER_RANGE, UPPER_RANGE, mBin);
+        if (mPreviewMode == PreviewMode.DETECT) {
+            if (hasHistgram) {
+                backProjection();
+            } else {
+                // use pre-defined color range
+                Core.inRange(mHsv, LOWER_RANGE, UPPER_RANGE, mBin);
+            }
+        } else {
+            calcHistgram();
+        }
 
         // (4) distance transform
         Imgproc.distanceTransform(mBin, m32f, Imgproc.CV_DIST_L2, 5);
@@ -256,6 +366,12 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         
         // draw area line
         drawAreaLine();
+
+        if (mPreviewMode == PreviewMode.ADJUST) {
+            return mRgba;
+        }
+
+        // draw detected contours
         if (isDebugDraw) {
             Imgproc.drawContours(mRgba, contours, maxId, AREA_COLOR, 3);
         }
@@ -264,6 +380,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             Core.putText(mRgba, "Auto Exposure Locked",
                     TEXT_POINT, Core.FONT_HERSHEY_DUPLEX, 1.0f, FONT_COLOR);
         }
+
         // (7) find convex hull
         int edgeCount = 0, fingerCount = 0;
         if ((maxContours != null) &&
