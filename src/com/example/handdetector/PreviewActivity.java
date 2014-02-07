@@ -167,7 +167,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mBin = new Mat();
         mRoi = new Mat();
         mHist = new Mat();
-        mChannels = new MatOfInt(0, 1);
+
+        // ヒストグラムのパラメータ
+        mChannels = new MatOfInt(0, 1);  // use only H and S
         mHistSize = new MatOfInt(30, 32);
         mRange = new MatOfFloat(0, 180, 0, 256);
 
@@ -193,13 +195,11 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     private static boolean isPortrait = false; // この試みは失敗に終わったので永久にfalse
     private static boolean isDebugDraw = false; // 輪郭線とか凹凸の線とかを画面表示
-    //private static final Scalar LOWER_RANGE = new Scalar(0, 38, 50);
     private static final Scalar LOWER_RANGE = new Scalar(0, 23, 25);
     private static final Scalar UPPER_RANGE = new Scalar(24, 190, 228);
     private static final float EDGE_ANGLE = 60.0f;
     private static final int MEDIAN_BLUR_THRESH = 11;
-    //private static final int FINGER_EDGE_THRESH = 6;
-    private static final int FINGER_EDGE_THRESH = 3;
+    private static final int FINGER_EDGE_THRESH = 5;
 
     private Point mAreaPoint1 = new Point();
     private Point mAreaPoint2 = new Point();
@@ -225,10 +225,10 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     }
 
     private void updateTargetPoint() {
-        mTargetPoint1.x = mTargetPoint3.x = mWidth*2/5;
-        mTargetPoint2.x = mTargetPoint4.x = mWidth*3/5;
-        mTargetPoint1.y = mTargetPoint2.y = mHeight*2/5;
-        mTargetPoint3.y = mTargetPoint4.y = mHeight*3/5;
+        mTargetPoint1.x = mTargetPoint3.x = mWidth*3/7;
+        mTargetPoint2.x = mTargetPoint4.x = mWidth*4/7;
+        mTargetPoint1.y = mTargetPoint2.y = mHeight*3/7;
+        mTargetPoint3.y = mTargetPoint4.y = mHeight*4/7;
     }
 
     private boolean isValid() {
@@ -266,21 +266,21 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         }
     }
 
-    private void judgeArea(Point target) {
-        if (Double.compare(target.x, mLeftBorder) < 0) {
+    private void judgeArea(double x, double y) {
+        if (Double.compare(x, mLeftBorder) < 0) {
             // turn left!
             mMotionControl.moveLeft();
-        } else if (Double.compare(target.x, mRightBorder) > 0) {
+        } else if (Double.compare(x, mRightBorder) > 0) {
             // turn right!
             mMotionControl.moveRight();
-        } else if (Double.compare(target.y, mFrontBorder) < 0) {
+        } else if (Double.compare(y, mFrontBorder) < 0) {
             // move forward!
             mMotionControl.moveForward();
         } else {
             // move back!
             //mMotionControl.moveBack();
             // バックはできないらしいので中央から左右に回転
-            if (Double.compare(target.x, mWidth/2) > 0) {
+            if (Double.compare(x, mWidth/2) > 0) {
                 mMotionControl.moveRight();
             } else {
                 mMotionControl.moveLeft();
@@ -293,9 +293,15 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             Log.d(TAG, "start timeer 5sec");
             mHandler.sendEmptyMessageDelayed(MSG_CALC_HIST, 5000);
         }
-        mHsv.submat(new Rect(mTargetPoint1, mTargetPoint4)).copyTo(mRoi);
+        Rect rect = new Rect(mTargetPoint1, mTargetPoint4);
+        updateHistgram(rect);
+    }
 
-        Mat mask = new Mat();
+    private void updateHistgram(final Rect rect) {
+        // set ROI
+        mHsv.submat(rect).copyTo(mRoi);
+
+        Mat mask = new Mat();  // doesn't use mask
         List<Mat> list = new ArrayList<Mat>();
         Core.split(mRoi, list);
         Imgproc.calcHist(list, mChannels, mask, mHist, mHistSize, mRange);
@@ -305,7 +311,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         List<Mat> list = new ArrayList<Mat>();
         Core.split(mHsv, list);
         Imgproc.calcBackProject(list, mChannels, mHist, mTemp, mRange, 1.0f);
-        Core.inRange(mTemp, new Scalar(180), new Scalar(255), mBin);
+        Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
     }
 
     @Override
@@ -320,7 +326,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
         // (1) convert to HSV
         Imgproc.cvtColor(mRgba, mTemp, Imgproc.COLOR_RGBA2RGB);
-        Imgproc.cvtColor(mTemp, mHsv, Imgproc.COLOR_RGB2HSV);
+        Imgproc.cvtColor(mTemp, mHsv, Imgproc.COLOR_RGB2HSV_FULL);
 
         // (2) smooth with median
         // 遅くなるのでやめた
@@ -363,7 +369,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             }
             index++;
         }
-        
+
         // draw area line
         drawAreaLine();
 
@@ -438,6 +444,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         // (8) show detected object as a hand
         //Log.d(TAG, "edge=" + edgeCount + " (finger=" + fingerCount + ")");
         if (maxContours != null && (edgeCount >= FINGER_EDGE_THRESH)) {
+            // draw a circle which indicates "found hand!"
             Point[] points = maxContours.toArray();
             double sumx = 0.0f, sumy = 0.0f;
             int num = points.length;
@@ -445,10 +452,17 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
                 sumx += points[i].x;
                 sumy += points[i].y;
             }
-            Point center = new Point(sumx/num, sumy/num);
-            Core.circle(mRgba, center, 20, DETECT_COLOR, 5);
+            double centerx = sumx/num;
+            double centery = sumy/num;
+            int range = 20;
+            Point lt = new Point(centerx - range, centery - range);
+            Point rb = new Point(centerx + range, centery + range);
+            Core.rectangle(mRgba, lt, rb, DETECT_COLOR, 3);
+            // update histogram as current "hot" location
+            updateHistgram(new Rect(lt, rb));
+            hasHistgram = true;
             // (9) judge area (right or left)
-            judgeArea(center);
+            judgeArea(centerx, centery);
         } else {
             // stop
             mMotionControl.moveStop();
