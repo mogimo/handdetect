@@ -198,8 +198,9 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private static final Scalar LOWER_RANGE = new Scalar(0, 23, 25);
     private static final Scalar UPPER_RANGE = new Scalar(24, 190, 228);
     private static final float EDGE_ANGLE = 60.0f;
-    private static final int MEDIAN_BLUR_THRESH = 11;
-    private static final int FINGER_EDGE_THRESH = 5;
+    //private static final int MEDIAN_BLUR_THRESH = 11;
+    private static final int FINGER_EDGE_THRESH = 6;
+    private static final int ROI_SIZE_HALF = 20;
 
     private Point mAreaPoint1 = new Point();
     private Point mAreaPoint2 = new Point();
@@ -212,8 +213,6 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     private Point mTargetPoint1 = new Point();
     private Point mTargetPoint2 = new Point();
-    private Point mTargetPoint3 = new Point();
-    private Point mTargetPoint4 = new Point();
 
     private void rotate90() {
         MatOfPoint2f src = new MatOfPoint2f(
@@ -225,10 +224,10 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     }
 
     private void updateTargetPoint() {
-        mTargetPoint1.x = mTargetPoint3.x = mWidth*3/7;
-        mTargetPoint2.x = mTargetPoint4.x = mWidth*4/7;
-        mTargetPoint1.y = mTargetPoint2.y = mHeight*3/7;
-        mTargetPoint3.y = mTargetPoint4.y = mHeight*4/7;
+        mTargetPoint1.x = mWidth/2 - ROI_SIZE_HALF;
+        mTargetPoint1.y = mHeight/2 - ROI_SIZE_HALF;
+        mTargetPoint2.x = mWidth/2 + ROI_SIZE_HALF;
+        mTargetPoint2.y = mHeight/2 + ROI_SIZE_HALF;
     }
 
     private boolean isValid() {
@@ -259,10 +258,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             // バックできないらしいので後ろの部分を左右に分割
             Core.line(mRgba, mAreaPoint7, mAreaPoint8, AREA_COLOR, 2);
         } else {
-            Core.line(mRgba, mTargetPoint1, mTargetPoint2, AREA_COLOR, 2);
-            Core.line(mRgba, mTargetPoint1, mTargetPoint3, AREA_COLOR, 2);
-            Core.line(mRgba, mTargetPoint2, mTargetPoint4, AREA_COLOR, 2);
-            Core.line(mRgba, mTargetPoint3, mTargetPoint4, AREA_COLOR, 2);
+            Core.rectangle(mRgba, mTargetPoint1, mTargetPoint2, AREA_COLOR, 2);
         }
     }
 
@@ -293,7 +289,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             Log.d(TAG, "start timeer 5sec");
             mHandler.sendEmptyMessageDelayed(MSG_CALC_HIST, 5000);
         }
-        Rect rect = new Rect(mTargetPoint1, mTargetPoint4);
+        Rect rect = new Rect(mTargetPoint1, mTargetPoint2);
         updateHistgram(rect);
     }
 
@@ -454,7 +450,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             }
             double centerx = sumx/num;
             double centery = sumy/num;
-            int range = 20;
+            int range = ROI_SIZE_HALF;
             Point lt = new Point(centerx - range, centery - range);
             Point rb = new Point(centerx + range, centery + range);
             Core.rectangle(mRgba, lt, rb, DETECT_COLOR, 3);
