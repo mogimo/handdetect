@@ -137,6 +137,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     @Override
     public void onPause() {
+        Log.d(TAG, "onPause()");
         super.onPause();
         if (mOpenCvCameraView != null)
             mOpenCvCameraView.disableView();
@@ -144,6 +145,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     @Override
     public void onResume() {
+        Log.d(TAG, "onResume()");
         super.onResume();
         OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_3, this, mLoaderCallback);
     }
@@ -155,6 +157,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     @Override
     public void onCameraViewStarted(int width, int height) {
+        Log.d(TAG, "onCameraViewStarted()");
         mWidth = width;
         mHeight = height;
         updateBorder();
@@ -172,6 +175,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mChannels = new MatOfInt(0, 1);  // use only H and S
         mHistSize = new MatOfInt(30, 32);
         mRange = new MatOfFloat(0, 180, 0, 256);
+        hasHistgram = false;
 
         TEXT_POINT = new Point(0, mHeight-10);
         Log.d(TAG, "set exposure = " + mExposure);
@@ -182,6 +186,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
 
     @Override
     public void onCameraViewStopped() {
+        Log.d(TAG, "onCameraViewStopped()");
         mGray.release();
         mRgba.release();
         mTemp.release();
@@ -306,8 +311,10 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     private void backProjection() {
         List<Mat> list = new ArrayList<Mat>();
         Core.split(mHsv, list);
-        Imgproc.calcBackProject(list, mChannels, mHist, mTemp, mRange, 1.0f);
-        Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
+        if (hasHistgram && mHist.dims() != 0) {
+            Imgproc.calcBackProject(list, mChannels, mHist, mTemp, mRange, 1.0f);
+            Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
+        }
     }
 
     @Override
