@@ -127,7 +127,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         setContentView(R.layout.preview);
         mOpenCvCameraView = (ControlableCameraView) findViewById(R.id.cameraSurfaceview);
         mOpenCvCameraView.setCvCameraViewListener(this);
-        //mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
+        mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
         mOpenCvCameraView.enableFpsMeter();
         mOpenCvCameraView.setMaxFrameSize(800, 480);
 
@@ -171,7 +171,6 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mRoi = new Mat();
         mHist = new Mat();
 
-        // ヒストグラムのパラメータ
         mChannels = new MatOfInt(0, 1);  // use only H and S
         mHistSize = new MatOfInt(30, 32);
         mRange = new MatOfFloat(0, 180, 0, 256);
@@ -198,14 +197,14 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     }
 
 
-    private static boolean isPortrait = false; // この試みは失敗に終わったので永久にfalse
-    private static boolean isDebugDraw = false; // 輪郭線とか凹凸の線とかを画面表示
+    private static boolean isPortrait = false;
+    private static boolean isDebugDraw = false;
     private static final Scalar LOWER_RANGE = new Scalar(0, 23, 25);
     private static final Scalar UPPER_RANGE = new Scalar(24, 190, 228);
     private static final float EDGE_ANGLE = 60.0f;
     //private static final int MEDIAN_BLUR_THRESH = 11;
     private static final int FINGER_EDGE_THRESH = 6;
-    private static final int ROI_SIZE_HALF = 20;
+    private static final int ROI_SIZE_HALF = 40;
 
     private Point mAreaPoint1 = new Point();
     private Point mAreaPoint2 = new Point();
@@ -260,7 +259,6 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             Core.line(mRgba, mAreaPoint1, mAreaPoint2, AREA_COLOR, 2);
             Core.line(mRgba, mAreaPoint3, mAreaPoint4, AREA_COLOR, 2);
             Core.line(mRgba, mAreaPoint5, mAreaPoint6, AREA_COLOR, 2);
-            // バックできないらしいので後ろの部分を左右に分割
             Core.line(mRgba, mAreaPoint7, mAreaPoint8, AREA_COLOR, 2);
         } else {
             Core.rectangle(mRgba, mTargetPoint1, mTargetPoint2, AREA_COLOR, 2);
@@ -280,7 +278,6 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         } else {
             // move back!
             //mMotionControl.moveBack();
-            // バックはできないらしいので中央から左右に回転
             if (Double.compare(x, mWidth/2) > 0) {
                 mMotionControl.moveRight();
             } else {
@@ -304,9 +301,21 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         mHsv.submat(rect).copyTo(mRoi);
 
         Mat mask = new Mat();  // doesn't use mask
+        Mat temp = new Mat();
         List<Mat> list = new ArrayList<Mat>();
         Core.split(mRoi, list);
-        Imgproc.calcHist(list, mChannels, mask, mHist, mHistSize, mRange);
+        Imgproc.calcHist(list, mChannels, mask, temp, mHistSize, mRange);
+        if (hasHistgram) {
+	        final double score = Imgproc.compareHist(temp, mHist, Imgproc.CV_COMP_INTERSECT);
+            Log.d(TAG, "compare histgram score = " + score);
+	        if (Double.compare(score, 1000.0d) > 0) {
+	            Log.d(TAG, "update! new histgram");
+	            mHist = temp.clone();
+	        }
+        } else {
+            Log.d(TAG, "calc histgram");
+            mHist = temp.clone();
+        }
     }
 
     private void backProjection() {
@@ -314,8 +323,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         Core.split(mHsv, list);
         if (hasHistgram && mHist.dims() != 0) {
             Imgproc.calcBackProject(list, mChannels, mHist, mTemp, mRange, 1.0f);
-            //Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
-            Core.inRange(mTemp, LOWER_RANGE, UPPER_RANGE, mBin);
+            Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
+            //Core.inRange(mTemp, LOWER_RANGE, UPPER_RANGE, mBin);
         }
     }
 
@@ -334,7 +343,6 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         Imgproc.cvtColor(mTemp, mHsv, Imgproc.COLOR_RGB2HSV_FULL);
 
         // (2) smooth with median
-        // 遅くなるのでやめた
         //Imgproc.medianBlur(mHsv, mTemp, MEDIAN_BLUR_THRESH);
         //Imgproc.GaussianBlur(mHsv, mTemp, new Size(15,15), 8);
 
@@ -448,8 +456,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         }
         // (8) show detected object as a hand
         //Log.d(TAG, "edge=" + edgeCount + " (finger=" + fingerCount + ")");
-//        if (maxContours != null && (edgeCount >= FINGER_EDGE_THRESH)) {
-        if (maxContours != null && (edgeCount < 3)) {
+        if (maxContours != null && (edgeCount >= FINGER_EDGE_THRESH)) {
+//        if (maxContours != null && (edgeCount < 3)) {
             // draw a circle which indicates "found hand!"
             Point[] points = maxContours.toArray();
             double sumx = 0.0f, sumy = 0.0f;
@@ -466,8 +474,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             if (lt.x > 0 && lt.y > 0 && rb.x < mWidth && rb.y < mHeight) {
                 Core.rectangle(mRgba, lt, rb, DETECT_COLOR, 3);
                 // update histogram as current "hot" location
-                updateHistgram(new Rect(lt, rb));
-                hasHistgram = true;
+                //updateHistgram(new Rect(lt, rb));
+                //hasHistgram = true;
             }
             // (9) judge area (right or left)
             judgeArea(centerx, centery);
