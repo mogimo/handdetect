@@ -127,7 +127,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         setContentView(R.layout.preview);
         mOpenCvCameraView = (ControlableCameraView) findViewById(R.id.cameraSurfaceview);
         mOpenCvCameraView.setCvCameraViewListener(this);
-        mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
+        //mOpenCvCameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_FRONT);
         mOpenCvCameraView.enableFpsMeter();
         mOpenCvCameraView.setMaxFrameSize(800, 480);
 
@@ -299,6 +299,7 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
     }
 
     private void updateHistgram(final Rect rect) {
+        Log.d(TAG, "update histgram rect = " + rect);
         // set ROI
         mHsv.submat(rect).copyTo(mRoi);
 
@@ -313,7 +314,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         Core.split(mHsv, list);
         if (hasHistgram && mHist.dims() != 0) {
             Imgproc.calcBackProject(list, mChannels, mHist, mTemp, mRange, 1.0f);
-            Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
+            //Core.inRange(mTemp, new Scalar(30), new Scalar(256), mBin);
+            Core.inRange(mTemp, LOWER_RANGE, UPPER_RANGE, mBin);
         }
     }
 
@@ -446,7 +448,8 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
         }
         // (8) show detected object as a hand
         //Log.d(TAG, "edge=" + edgeCount + " (finger=" + fingerCount + ")");
-        if (maxContours != null && (edgeCount >= FINGER_EDGE_THRESH)) {
+//        if (maxContours != null && (edgeCount >= FINGER_EDGE_THRESH)) {
+        if (maxContours != null && (edgeCount < 3)) {
             // draw a circle which indicates "found hand!"
             Point[] points = maxContours.toArray();
             double sumx = 0.0f, sumy = 0.0f;
@@ -460,10 +463,12 @@ public class PreviewActivity extends Activity implements CvCameraViewListener2 {
             int range = ROI_SIZE_HALF;
             Point lt = new Point(centerx - range, centery - range);
             Point rb = new Point(centerx + range, centery + range);
-            Core.rectangle(mRgba, lt, rb, DETECT_COLOR, 3);
-            // update histogram as current "hot" location
-            updateHistgram(new Rect(lt, rb));
-            hasHistgram = true;
+            if (lt.x > 0 && lt.y > 0 && rb.x < mWidth && rb.y < mHeight) {
+                Core.rectangle(mRgba, lt, rb, DETECT_COLOR, 3);
+                // update histogram as current "hot" location
+                updateHistgram(new Rect(lt, rb));
+                hasHistgram = true;
+            }
             // (9) judge area (right or left)
             judgeArea(centerx, centery);
         } else {
